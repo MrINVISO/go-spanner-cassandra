@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -190,7 +192,7 @@ func getAllClientOpts(
 			internaloption.EnableDirectPathXds(),
 		)
 	}
-	if opts.Insecure {
+	if opts.Insecure && isLocalEndpoint(opts.SpannerEndpoint) {
 		clientDefaultOpts = append(
 			clientDefaultOpts,
 			option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
@@ -200,6 +202,21 @@ func getAllClientOpts(
 	allDefaultOpts := append(generatedDefaultOpts, clientDefaultOpts...)
 
 	return append(allDefaultOpts, opts.GoogleApiOpts...)
+}
+
+func isLocalEndpoint(endpoint string) bool {
+	host := endpoint
+	if parsedHost, _, err := net.SplitHostPort(endpoint); err == nil {
+		host = parsedHost
+	}
+
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (cl *AdapterClient) getMetadata() metadata.MD {
