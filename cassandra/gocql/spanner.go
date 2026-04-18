@@ -20,6 +20,7 @@ package spanner
 import (
 	"encoding/binary"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -29,8 +30,11 @@ import (
 )
 
 // Map from cluster config to local proxies.
-var proxyMap = make(
-	map[*gocql.ClusterConfig]*adapter.TCPProxy,
+var (
+	proxyMap = make(
+		map[*gocql.ClusterConfig]*adapter.TCPProxy,
+	)
+	proxyMapMu sync.RWMutex
 )
 
 // Options represents the configuration for a virtual Spanner cluster.
@@ -118,7 +122,9 @@ func NewCluster(
 	cfg.ConnectTimeout = 60 * time.Second
 
 	// Record the mapping between the cluster and the proxy.
+	proxyMapMu.Lock()
 	proxyMap[cfg] = proxy
+	proxyMapMu.Unlock()
 
 	return cfg
 }
@@ -127,13 +133,16 @@ func NewCluster(
 func CloseCluster(
 	cfg *gocql.ClusterConfig,
 ) {
-	if proxy, ok := proxyMap[cfg]; ok {
+	proxyMapMu.Lock()
+	proxy, ok := proxyMap[cfg]
+	if ok {
 		proxy.Close()
 		delete(
 			proxyMap,
 			cfg,
 		)
 	}
+	proxyMapMu.Unlock()
 }
 
 type cassandraProtocol struct {
@@ -152,12 +161,17 @@ func (ca *cassandraProtocol) FrameBodyLength(header []byte) int {
 }
 
 func (ca *cassandraProtocol) ExtractKeys(payload []byte) []string {
-	// TODO: Bounds check.
+	if len(payload) < 11 {
+		return nil
+	}
 	if payload[4] != 0x0A {
 		return nil
 	}
 
 	idLen := int(binary.BigEndian.Uint16(payload[9:11]))
+	if 11+idLen > len(payload) {
+		return nil
+	}
 	id := string(payload[11 : 11+idLen])
 
 	return []string{id}

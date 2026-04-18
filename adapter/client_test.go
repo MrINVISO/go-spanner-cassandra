@@ -80,3 +80,44 @@ func TestGetOrRefreshSession(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLocalEndpoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		want     bool
+	}{
+		{
+			name:     "localhost with port",
+			endpoint: "localhost:9010",
+			want:     true,
+		},
+		{
+			name:     "loopback IPv4 with port",
+			endpoint: "127.0.0.1:9010",
+			want:     true,
+		},
+		{
+			name:     "loopback IPv6 with port",
+			endpoint: "[::1]:9010",
+			want:     true,
+		},
+		{
+			name:     "remote endpoint",
+			endpoint: "spanner.googleapis.com:443",
+			want:     false,
+		},
+		{
+			name:     "empty endpoint",
+			endpoint: "",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isLocalEndpoint(tt.endpoint)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
