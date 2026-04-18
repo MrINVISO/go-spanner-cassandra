@@ -58,7 +58,10 @@ func setupCluster(
 
 func teardownCluster(t *testing.T, cluster *gocql.ClusterConfig) {
 	CloseCluster(cluster)
-	assert.NotContains(t, proxyMap, cluster)
+	proxyMapMu.RLock()
+	_, exists := proxyMap[cluster]
+	proxyMapMu.RUnlock()
+	assert.False(t, exists)
 }
 
 func TestNewCluster(t *testing.T) {
@@ -84,8 +87,10 @@ func TestNewCluster(t *testing.T) {
 			assert.Equal(t, cluster.ProtoVersion, 4)
 
 			// Assert that the proxy is created and stored in the proxyMap
-			assert.Contains(t, proxyMap, cluster)
-			proxy := proxyMap[cluster]
+			proxyMapMu.RLock()
+			proxy, ok := proxyMap[cluster]
+			proxyMapMu.RUnlock()
+			assert.True(t, ok)
 			assert.NotNil(t, proxy)
 
 			// Assert that the cluster config is correctly set up to connect to the
@@ -94,6 +99,55 @@ func TestNewCluster(t *testing.T) {
 			assert.Equal(t, cluster.Hosts, []string{addr.IP.String()})
 			assert.Equal(t, cluster.Port, addr.Port)
 			teardownCluster(t, cluster)
+		})
+	}
+}
+
+func TestExtractKeysDefensiveBoundsCheck(t *testing.T) {
+	protocol := &cassandraProtocol{}
+	testCases := []struct {
+		name    string
+		payload []byte
+		want    []string
+	}{
+		{
+			name:    "too short payload",
+			payload: []byte{0x00, 0x01},
+			want:    nil,
+		},
+		{
+			name: "opcode mismatch",
+			payload: []byte{
+				0x00, 0x00, 0x00, 0x00, 0x09,
+				0x00, 0x00, 0x00, 0x00,
+				0x00, 0x01, 'a',
+			},
+			want: nil,
+		},
+		{
+			name: "id length exceeds payload",
+			payload: []byte{
+				0x00, 0x00, 0x00, 0x00, 0x0A,
+				0x00, 0x00, 0x00, 0x00,
+				0x00, 0x05, 'a',
+			},
+			want: nil,
+		},
+		{
+			name: "valid payload",
+			payload: []byte{
+				0x00, 0x00, 0x00, 0x00, 0x0A,
+				0x00, 0x00, 0x00, 0x00,
+				0x00, 0x03, 'a', 'b', 'c',
+			},
+			want: []string{"abc"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := protocol.ExtractKeys(tc.payload)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
