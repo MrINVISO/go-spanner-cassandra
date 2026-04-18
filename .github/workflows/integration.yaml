@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
-  pull_request_target:
+  pull_request:
     branches: [ "main" ]
 
 env:
@@ -13,6 +13,8 @@ jobs:
   build:
     name: Integration Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
     - name: checkout
       uses: actions/checkout@v4
@@ -26,16 +28,23 @@ jobs:
       run: go build -v ./...
     
     - id: 'auth'
+      if: ${{ secrets.SPANNER_CASSANDRA_ADAPTER_CICD_SERVICE_ACCOUNT != '' }}
       uses: 'google-github-actions/auth@v2'
       with:
           credentials_json: '${{ secrets.SPANNER_CASSANDRA_ADAPTER_CICD_SERVICE_ACCOUNT }}'
 
+    - name: skip integration tests when credentials are unavailable
+      if: ${{ secrets.SPANNER_CASSANDRA_ADAPTER_CICD_SERVICE_ACCOUNT == '' }}
+      run: echo "Skipping integration tests because SPANNER_CASSANDRA_ADAPTER_CICD_SERVICE_ACCOUNT secret is not available."
+
     - name: it tests against Spanner 
+      if: ${{ secrets.SPANNER_CASSANDRA_ADAPTER_CICD_SERVICE_ACCOUNT != '' }}
       run: |
           go mod tidy
           go test -v  ./... -tags=integration
 
     - name: it tests against Cassandra 
+      if: ${{ secrets.SPANNER_CASSANDRA_ADAPTER_CICD_SERVICE_ACCOUNT != '' }}
       run: |
           go mod tidy
           go test -v  ./... -tags=integration -target=cassandra
